@@ -65,6 +65,7 @@ BEGIN_MESSAGE_MAP(CTargAppDlg, CDialogEx)
 	ON_WM_PAINT()
 	ON_WM_QUERYDRAGICON()
 	ON_BN_CLICKED(IDC_BUTTON1, &CTargAppDlg::OnBnClickedButton1)
+	ON_BN_CLICKED(IDC_BUTTON2, &CTargAppDlg::OnBnClickedButton3)
 END_MESSAGE_MAP()
 
 
@@ -157,7 +158,7 @@ HCURSOR CTargAppDlg::OnQueryDragIcon()
 	return static_cast<HCURSOR>(m_hIcon);
 }
 
-DWORD ThreadPro(
+DWORD WINAPI ThreadPro(
 	LPVOID lpThreadParameter
 )
 {
@@ -170,3 +171,16 @@ void CTargAppDlg::OnBnClickedButton1()
 	CreateThread(NULL, NULL, ThreadPro, NULL, 0, NULL);
 }
 
+VOID _declspec(naked) Exception()
+{
+	__asm
+	{
+		int 3
+		retn
+	}
+}
+
+void CTargAppDlg::OnBnClickedButton3()
+{
+	Exception();
+}

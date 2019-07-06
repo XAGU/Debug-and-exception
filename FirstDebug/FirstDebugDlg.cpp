@@ -99,7 +99,7 @@ BOOL CFirstDebugDlg::OnInitDialog()
 	SetIcon(m_hIcon, TRUE);			// 设置大图标
 	SetIcon(m_hIcon, FALSE);		// 设置小图标
 
-	// TODO: 在此添加额外的初始化代码
+	
 
 	return TRUE;  // 除非将焦点设置到控件，否则返回 TRUE
 }
@@ -153,7 +153,7 @@ HCURSOR CFirstDebugDlg::OnQueryDragIcon()
 	return static_cast<HCURSOR>(m_hIcon);
 }
 
-DWORD ThreadPro(LPVOID lpParam)
+DWORD WINAPI ThreadPro(LPVOID lpParam)
 {
 	CFirstDebugDlg* firstDebug = (CFirstDebugDlg*)lpParam;
 	DWORD process_id = firstDebug->GetDlgItemInt(IDC_EDIT1);
@@ -172,22 +172,32 @@ DWORD ThreadPro(LPVOID lpParam)
 	{
 		DEBUG_EVENT debug_info;
 		WaitForDebugEvent(&debug_info, INFINITE);
-		//CString string;
+		CString string;
 		//firstDebug->GetDlgItemText(IDC_EDIT2, string);
 		//string.Format(L"%s \r\n有调试事件到来，事件类型为：%d",string,debug_info.dwDebugEventCode);
 		//firstDebug->SetDlgItemText(IDC_EDIT2, string.GetBuffer());
 		switch (debug_info.dwDebugEventCode)
 		{
-		case CREATE_THREAD_DEBUG_EVENT:
+		//case CREATE_THREAD_DEBUG_EVENT:
+		//{
+		//	CString string;
+		//	firstDebug->GetDlgItemText(IDC_EDIT2, string);
+		//	string.Format(L"%s \r\nMessageId:CREATE_THREAD_DEBUG_EVENT ThreadAddress:%x",
+		//		string,
+		//		debug_info.u.CreateThread.lpStartAddress);
+		//	firstDebug->SetDlgItemText(IDC_EDIT2, string.GetBuffer());
+		//	break;
+		//}
+		case EXCEPTION_DEBUG_EVENT:
 		{
-			CString string;
-			firstDebug->GetDlgItemText(IDC_EDIT2, string);
-			string.Format(L"%s \r\nMessageId:CREATE_THREAD_DEBUG_EVENT ThreadAddress:%x",
-				string,
-				debug_info.u.CreateThread.lpStartAddress);
-			firstDebug->SetDlgItemText(IDC_EDIT2, string.GetBuffer());
+			if (debug_info.u.Exception.ExceptionRecord.ExceptionCode == EXCEPTION_BREAKPOINT)
+			{
+				firstDebug->GetDlgItemText(IDC_EDIT2, string);
+				string.Format(L"%s \r\nEXCEPTION_ADDRESS:%X", string, debug_info.u.Exception.ExceptionRecord.ExceptionAddress);
+				firstDebug->SetDlgItemText(IDC_EDIT2, string.GetBuffer());
+			}
+			break;
 		}
-		break;
 		default:
 			break;
 		}
