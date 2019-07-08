@@ -1,6 +1,16 @@
 #include <ntifs.h>
 #include <ntimage.h>
 
+#pragma pack(1) //写这个内存以一字节对齐 如果不写是以4字节的对齐的  
+typedef struct ServiceDescriptorEntry {//这个结构就是为了管理这个数组而来的 内核api所在的数组 才有这个结构的 这个是ssdt  
+	unsigned int *ServiceTableBase;//就是ServiceTable ssdt数组  
+	unsigned int *ServiceCounterTableBase; //仅适用于checked build版本 无用  
+	unsigned int NumberOfServices;//(ServiceTableBase)数组中有多少个元素 有多少个项  
+	unsigned char *ParamTableBase;//参数表基址 我们层传过来的api的参数 占用多少字节 多大  
+} ServiceDescriptorTableEntry_t, *PServiceDescriptorTableEntry_t;
+#pragma pack()
+__declspec(dllimport) ServiceDescriptorTableEntry_t KeServiceDescriptorTable;
+
 typedef struct _SIGNATURE_INFO {
 	UCHAR	cSingature;
 	int		Offset;
@@ -214,12 +224,41 @@ BOOLEAN			g_HookSuccess;
 ULONG			g_fnRtlDispatchException;
 ULONG			g_JmpOrigDisException;
 UCHAR			g_cDisExceptionCode[5];
+ULONG			g_JmpNtOpenprocess;
 
-typedef VOID (*RTLDISPATCHEXCEPTION)(IN PEXCEPTION_RECORD ExceptionRecord, IN PCONTEXT Context);
 
-VOID __stdcall FilterRtlDispatchException(IN PEXCEPTION_RECORD ExceptionRecord, IN PCONTEXT Context)
+VOID FilterNtOpenProcess()
 {
-	KdPrint(("<Exception Address>:%X  <Seh CAllBACK>:%X  Except code:%X", ExceptionRecord->ExceptionAddress, Context->Eip,ExceptionRecord->ExceptionCode));
+	KdPrint(("FilterNtOpenProcess-------%s",(char*)((ULONG)PsGetCurrentProcess()+0x16c)));
+}
+
+VOID __declspec(naked) NewNtOpenProcess()
+{
+	__asm
+	{
+		pushad
+		pushfd
+
+		call	FilterNtOpenProcess
+
+		popfd
+		popad
+		mov		edi,edi
+		push	ebp
+		mov		ebp,esp
+		jmp		g_JmpNtOpenprocess
+	}
+}
+
+ULONG __stdcall FilterRtlDispatchException(IN PEXCEPTION_RECORD ExceptionRecord, IN PCONTEXT Context)
+{
+	if (ExceptionRecord->ExceptionAddress == (PVOID)KeServiceDescriptorTable.ServiceTableBase[190])
+	{
+		Context->Eip = (ULONG)NewNtOpenProcess;
+		KdPrint(("<Exception Address>:%X  <Seh CAllBACK>:%X  Except code:%X", ExceptionRecord->ExceptionAddress, Context->Eip, ExceptionRecord->ExceptionCode));
+		return 1;
+	}
+	return 0;
 }
 
 VOID __declspec(naked) NewRtlDispatchException()
@@ -236,6 +275,8 @@ VOID __declspec(naked) NewRtlDispatchException()
 		push	[ebp+0xc];
 		push	[ebp+0x8]
 		call	FilterRtlDispatchException
+		test	eax,eax
+		jz		__SafeExit
 
 		popfd
 		popad
@@ -243,7 +284,22 @@ VOID __declspec(naked) NewRtlDispatchException()
 		mov		esp,ebp
 		pop		ebp
 
-		call	g_fnRtlDispatchException
+
+		mov		eax,0x1
+		retn	0x8
+
+__SafeExit:
+		popfd
+		popad
+		
+		mov		esp, ebp
+		pop		ebp
+
+		mov		edi,edi
+		push	ebp
+		mov		ebp,esp
+
+		jmp		g_JmpOrigDisException
 	}
 }
 
@@ -276,8 +332,31 @@ VOID HookRtlDisPatchException()
 	g_HookSuccess = Jmp_HookFunction(g_fnRtlDispatchException, (ULONG)NewRtlDispatchException, g_cDisExceptionCode);
 }
 
+
+VOID SetMonitor(ULONG address)
+{
+	__asm
+	{
+		mov eax,address
+		mov dr0,eax
+		mov eax,0x2
+		mov dr7,eax
+	}
+}
+
+VOID DelMonitor()
+{
+	__asm
+	{
+		mov eax, 0
+		mov dr0, eax
+		mov dr7, eax
+	}
+}
+
 VOID DriverUnLoad(PDRIVER_OBJECT pDrverObject)
 {
+	DelMonitor();
 	UNHookRtlDisPatchException();
 	KdPrint(("驱动卸载成功！"));
 }
@@ -287,6 +366,8 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT pDrverObject, PUNICODE_STRING usRegPath)
 	KdPrint(("驱动加载成功！"));
 	g_LocalDriverObj = pDrverObject;
 	HookRtlDisPatchException();
+	g_JmpNtOpenprocess = KeServiceDescriptorTable.ServiceTableBase[190] + 0x5;
+	SetMonitor(KeServiceDescriptorTable.ServiceTableBase[190]);
 	pDrverObject->DriverUnload = DriverUnLoad;
 	return STATUS_SUCCESS;
 }
