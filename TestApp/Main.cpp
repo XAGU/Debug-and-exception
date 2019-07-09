@@ -29,6 +29,7 @@ LONG NTAPI SefHandler(struct _EXCEPTION_POINTERS *ExceptionInfo)
 	return EXCEPTION_CONTINUE_EXECUTION;
 }
 
+
 int main()
 {
 	int address = 0;
