@@ -1,0 +1,86 @@
+;
+; CreateDbgOBjType.inf
+;
+
+[Version]
+Signature="$WINDOWS NT$"
+Class=Sample ; TODO: edit Class
+ClassGuid={78A1C341-4539-11d3-B88D-00C04FAD5171} ; TODO: edit ClassGuid
+Provider=%ManufacturerName%
+CatalogFile=CreateDbgOBjType.cat
+DriverVer= ; TODO: set DriverVer in stampinf property pages
+
+[DestinationDirs]
+DefaultDestDir = 12
+CreateDbgOBjType_Device_CoInstaller_CopyFiles = 11
+
+; ================= Class section =====================
+
+[ClassInstall32]
+Addreg=SampleClassReg
+
+[SampleClassReg]
+HKR,,,0,%ClassName%
+HKR,,Icon,,-5
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[SourceDisksFiles]
+CreateDbgOBjType.sys  = 1,,
+WdfCoInstaller$KMDFCOINSTALLERVERSION$.dll=1 ; make sure the number matches with SourceDisksNames
+
+;*****************************************
+; Install Section
+;*****************************************
+
+[Manufacturer]
+%ManufacturerName%=Standard,NT$ARCH$
+
+[Standard.NT$ARCH$]
+%CreateDbgOBjType.DeviceDesc%=CreateDbgOBjType_Device, Root\CreateDbgOBjType ; TODO: edit hw-id
+
+[CreateDbgOBjType_Device.NT]
+CopyFiles=Drivers_Dir
+
+[Drivers_Dir]
+CreateDbgOBjType.sys
+
+;-------------- Service installation
+[CreateDbgOBjType_Device.NT.Services]
+AddService = CreateDbgOBjType,%SPSVCINST_ASSOCSERVICE%, CreateDbgOBjType_Service_Inst
+
+; -------------- CreateDbgOBjType driver install sections
+[CreateDbgOBjType_Service_Inst]
+DisplayName    = %CreateDbgOBjType.SVCDESC%
+ServiceType    = 1               ; SERVICE_KERNEL_DRIVER
+StartType      = 3               ; SERVICE_DEMAND_START
+ErrorControl   = 1               ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %12%\CreateDbgOBjType.sys
+
+;
+;--- CreateDbgOBjType_Device Coinstaller installation ------
+;
+
+[CreateDbgOBjType_Device.NT.CoInstallers]
+AddReg=CreateDbgOBjType_Device_CoInstaller_AddReg
+CopyFiles=CreateDbgOBjType_Device_CoInstaller_CopyFiles
+
+[CreateDbgOBjType_Device_CoInstaller_AddReg]
+HKR,,CoInstallers32,0x00010000, "WdfCoInstaller$KMDFCOINSTALLERVERSION$.dll,WdfCoInstaller"
+
+[CreateDbgOBjType_Device_CoInstaller_CopyFiles]
+WdfCoInstaller$KMDFCOINSTALLERVERSION$.dll
+
+[CreateDbgOBjType_Device.NT.Wdf]
+KmdfService =  CreateDbgOBjType, CreateDbgOBjType_wdfsect
+[CreateDbgOBjType_wdfsect]
+KmdfLibraryVersion = $KMDFVERSION$
+
+[Strings]
+SPSVCINST_ASSOCSERVICE= 0x00000002
+ManufacturerName="<Your manufacturer name>" ;TODO: Replace with your manufacturer name
+ClassName="Samples" ; TODO: edit ClassName
+DiskName = "CreateDbgOBjType Installation Disk"
+CreateDbgOBjType.DeviceDesc = "CreateDbgOBjType Device"
+CreateDbgOBjType.SVCDESC = "CreateDbgOBjType Service"

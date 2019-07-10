@@ -287,8 +287,6 @@ UCHAR		g_cObpDecCode[5];
 UCHAR		g_cFreeObjCode[5];
 
 
-
-
 VOID __declspec(naked) FiliterAllobj()
 {
 	__asm{
@@ -408,27 +406,7 @@ VOID UnAntiCheck()
 	}
 }
 
-VOID DriverUnLoad(PDRIVER_OBJECT pDrverObject)
-{
-	UnAntiCheck();
-	KdPrint(("驱动卸载成功！"));
-}
 
-NTSTATUS DriverEntry(PDRIVER_OBJECT pDrverObject, PUNICODE_STRING usRegPath)
-{
-
-	KdPrint(("驱动加载成功！"));
-	if (AntiCheak(pDrverObject))
-	{
-		KdPrint(("Found !"));
-	}
-	else
-	{
-		KdPrint(("Not Found !"));
-	}
-	pDrverObject->DriverUnload = DriverUnLoad;
-	return STATUS_SUCCESS;
-}
 
 /*
 
