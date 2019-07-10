@@ -1,5 +1,16 @@
 #include "inc.h"
 
+#pragma pack(1)
+typedef struct ServiceDescriptorEntry {
+	unsigned int *ServiceTableBase;
+	unsigned int *ServiceCounterTableBase; //仅适用于checked build版本
+	unsigned int NumberOfServices;
+	unsigned char *ParamTableBase;
+} ServiceDescriptorTableEntry_t, *PServiceDescriptorTableEntry_t;
+#pragma pack()
+
+__declspec(dllimport) ServiceDescriptorTableEntry_t KeServiceDescriptorTable;
+
 typedef struct _SIGNATURE_INFO {
 	UCHAR	cSingature;
 	int		Offset;
@@ -41,6 +52,50 @@ typedef struct _LDR_DATA_TABLE_ENTRY                         // 24 elements, 0x7
 	/*0x06C*/     ULONG32      OriginalBase;
 	/*0x070*/     union _LARGE_INTEGER LoadTime;                           // 4 elements, 0x8 bytes (sizeof)   
 }LDR_DATA_TABLE_ENTRY, *PLDR_DATA_TABLE_ENTRY;
+
+ULONG GetAddress(ULONG uAddress, UCHAR *Signature, int flag)
+{
+	ULONG	index;
+	UCHAR	*p;
+	ULONG	uRetAddress;
+
+	if (uAddress == 0) { return 0; }
+
+	p = (UCHAR*)uAddress;
+	for (index = 0; index < 0x3000; index++)
+	{
+		if (*p == Signature[0] &&
+			*(p + 1) == Signature[1] &&
+			*(p + 2) == Signature[2] &&
+			*(p + 3) == Signature[3] &&
+			*(p + 4) == Signature[4])
+		{
+			if (flag == 0)
+			{
+				uRetAddress = (ULONG)(p + 4) + *(ULONG*)(p + 5) + 5;
+				return uRetAddress;
+			}
+			else if (flag == 1)
+			{
+				uRetAddress = *(ULONG*)(p + 5);
+				return uRetAddress;
+			}
+			else if (flag == 2) {
+				uRetAddress = (ULONG)(p + 4);
+				return uRetAddress;
+			}
+			else if (flag == 3) {
+				uRetAddress = (ULONG)(p + 5);
+				return uRetAddress;
+			}
+			else {
+				return 0;
+			}
+		}
+		p++;
+	}
+	return 0;
+}
 
 ULONG SearchAddressForSign(ULONG uStartBase, ULONG uSearchLength, SIGNATURE_INFO SignatureInfo[5])
 {
@@ -239,7 +294,7 @@ VOID __declspec(naked) FiliterAllobj()
 	__asm{
 		cmp		esi,g_DebugObject
 		jnz		__EXIT
-		mov		[edi],0
+		mov		[edx],0
 		__EXIT:
 		mov     ecx, [ecx]
 		cmp     ecx, [esi + 20h]
@@ -254,10 +309,9 @@ VOID __declspec(naked) FiliterObpInc()
 		cmp			edi, g_DebugObject
 		jz			__EXIT
 		lock xadd	[ecx], eax
-		inc			eax
 		__EXIT:
 		inc			eax
-		jmp		g_JmpObpIncrementHandleCountEx
+		jmp			g_JmpObpIncrementHandleCountEx
 	}
 }
 
@@ -265,7 +319,16 @@ VOID __declspec(naked) FiliterObpDec()
 {
 	__asm
 	{
-
+		push		esi
+		mov			esi,g_DebugObject
+		add			esi,0x1c
+		cmp			esi,edi
+		jz			__EXIT
+		lock xadd	[edi], eax
+		__EXIT:
+		pop			esi
+		pop			edi
+		jmp			g_JmpObpDecrementHandleCount
 	}
 }
 
@@ -273,7 +336,12 @@ VOID __declspec(naked) FiliterFreeObj()
 {
 	__asm
 	{
-
+		cmp			eax,g_DebugObject
+		jz			__EXIT
+		lock xadd	[ecx], edx
+		__EXIT:
+		test		[esi + 0Fh], 1
+		jmp			g_JmpObpFreeObject
 	}
 }
 
@@ -281,12 +349,19 @@ VOID __declspec(naked) FiliterFreeObj()
 BOOLEAN AntiCheak(PDRIVER_OBJECT pDriverObj)
 {
 	PLDR_DATA_TABLE_ENTRY		ldr;
+	UCHAR						cDbgObjSignCode[] = {0xff,0x75,0x10,0xff,0x35};
 	SIGNATURE_INFO SignCode[4][5] = {
 		{{0x14,10},{0x10, 7},{0xf0, 4},{0x1a, 1},{0x8b, 0}},
 		{{0xe8,11},{0x33, 6},{0x1c, 2},{0x40, 1},{0xf0, 0}},
 		{{0x56,12},{0xe8,11},{0x1c, 4},{0xc8, 2},{0xf0, 0}},
 		{{0x40,19},{0xe8,14},{0x18, 4},{0xca, 2},{0xf0, 0}},
 	};
+	g_DebugObject = GetAddress(KeServiceDescriptorTable.ServiceTableBase[61], cDbgObjSignCode, 1);
+	if (!MmIsAddressValid((PVOID)g_DebugObject))
+	{
+		return 0;
+	}
+	g_DebugObject = *(ULONG*)g_DebugObject;
 	ldr = SearchDriver(pDriverObj, L"ntoskrnl.exe");
 	if (ldr==NULL)
 	{
@@ -302,9 +377,9 @@ BOOLEAN AntiCheak(PDRIVER_OBJECT pDriverObj)
 		return FALSE;
 	}
 	g_JmpObpAllocateObject = g_ObpAllocateObject + 0x5;
-	g_JmpObpDecrementHandleCount = g_JmpObpFreeObject + 0x5;
-	g_JmpObpFreeObject = g_JmpObpFreeObject + 0x5;
-	g_JmpObpIncrementHandleCountEx = g_JmpObpIncrementHandleCountEx + 0x5;
+	g_JmpObpDecrementHandleCount = g_ObpDecrementHandleCount + 0x5;
+	g_JmpObpFreeObject = g_ObpFreeObject + 0x8;
+	g_JmpObpIncrementHandleCountEx = g_ObpIncrementHandleCountEx + 0x5;
 	g_bSuccessHookAllobj = Jmp_HookFunction(g_ObpAllocateObject,(ULONG)FiliterAllobj , g_cAllobjCode);
 	g_bSuccessHookFreeObj = Jmp_HookFunction(g_ObpFreeObject, (ULONG)FiliterFreeObj, g_cFreeObjCode);
 	g_bSuccessHookObpDec = Jmp_HookFunction(g_ObpDecrementHandleCount, (ULONG)FiliterObpDec, g_cObpDecCode);
@@ -335,6 +410,7 @@ VOID UnAntiCheck()
 
 VOID DriverUnLoad(PDRIVER_OBJECT pDrverObject)
 {
+	UnAntiCheck();
 	KdPrint(("驱动卸载成功！"));
 }
 
