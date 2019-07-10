@@ -1,0 +1,86 @@
+;
+; HookGetSetContextThread.inf
+;
+
+[Version]
+Signature="$WINDOWS NT$"
+Class=Sample ; TODO: edit Class
+ClassGuid={78A1C341-4539-11d3-B88D-00C04FAD5171} ; TODO: edit ClassGuid
+Provider=%ManufacturerName%
+CatalogFile=HookGetSetContextThread.cat
+DriverVer= ; TODO: set DriverVer in stampinf property pages
+
+[DestinationDirs]
+DefaultDestDir = 12
+HookGetSetContextThread_Device_CoInstaller_CopyFiles = 11
+
+; ================= Class section =====================
+
+[ClassInstall32]
+Addreg=SampleClassReg
+
+[SampleClassReg]
+HKR,,,0,%ClassName%
+HKR,,Icon,,-5
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[SourceDisksFiles]
+HookGetSetContextThread.sys  = 1,,
+WdfCoInstaller$KMDFCOINSTALLERVERSION$.dll=1 ; make sure the number matches with SourceDisksNames
+
+;*****************************************
+; Install Section
+;*****************************************
+
+[Manufacturer]
+%ManufacturerName%=Standard,NT$ARCH$
+
+[Standard.NT$ARCH$]
+%HookGetSetContextThread.DeviceDesc%=HookGetSetContextThread_Device, Root\HookGetSetContextThread ; TODO: edit hw-id
+
+[HookGetSetContextThread_Device.NT]
+CopyFiles=Drivers_Dir
+
+[Drivers_Dir]
+HookGetSetContextThread.sys
+
+;-------------- Service installation
+[HookGetSetContextThread_Device.NT.Services]
+AddService = HookGetSetContextThread,%SPSVCINST_ASSOCSERVICE%, HookGetSetContextThread_Service_Inst
+
+; -------------- HookGetSetContextThread driver install sections
+[HookGetSetContextThread_Service_Inst]
+DisplayName    = %HookGetSetContextThread.SVCDESC%
+ServiceType    = 1               ; SERVICE_KERNEL_DRIVER
+StartType      = 3               ; SERVICE_DEMAND_START
+ErrorControl   = 1               ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %12%\HookGetSetContextThread.sys
+
+;
+;--- HookGetSetContextThread_Device Coinstaller installation ------
+;
+
+[HookGetSetContextThread_Device.NT.CoInstallers]
+AddReg=HookGetSetContextThread_Device_CoInstaller_AddReg
+CopyFiles=HookGetSetContextThread_Device_CoInstaller_CopyFiles
+
+[HookGetSetContextThread_Device_CoInstaller_AddReg]
+HKR,,CoInstallers32,0x00010000, "WdfCoInstaller$KMDFCOINSTALLERVERSION$.dll,WdfCoInstaller"
+
+[HookGetSetContextThread_Device_CoInstaller_CopyFiles]
+WdfCoInstaller$KMDFCOINSTALLERVERSION$.dll
+
+[HookGetSetContextThread_Device.NT.Wdf]
+KmdfService =  HookGetSetContextThread, HookGetSetContextThread_wdfsect
+[HookGetSetContextThread_wdfsect]
+KmdfLibraryVersion = $KMDFVERSION$
+
+[Strings]
+SPSVCINST_ASSOCSERVICE= 0x00000002
+ManufacturerName="<Your manufacturer name>" ;TODO: Replace with your manufacturer name
+ClassName="Samples" ; TODO: edit ClassName
+DiskName = "HookGetSetContextThread Installation Disk"
+HookGetSetContextThread.DeviceDesc = "HookGetSetContextThread Device"
+HookGetSetContextThread.SVCDESC = "HookGetSetContextThread Service"
