@@ -1,7 +1,85 @@
 #include <ntifs.h>
 #include <ntimage.h>
 
+#if defined(_AMD64_)
 
+FORCEINLINE
+VOID
+ProbeForReadSmallStructure(
+	IN PVOID Address,
+	IN SIZE_T Size,
+	IN ULONG Alignment
+)
+
+/*++
+
+Routine Description:
+
+	Probes a structure for read access whose size is known at compile time.
+
+	N.B. A NULL structure address is not allowed.
+
+Arguments:
+
+	Address - Supples a pointer to the structure.
+
+	Size - Supplies the size of the structure.
+
+	Alignment - Supplies the alignment of structure.
+
+Return Value:
+
+	None
+
+--*/
+
+{
+
+	ASSERT((Alignment == 1) || (Alignment == 2) ||
+		(Alignment == 4) || (Alignment == 8) ||
+		(Alignment == 16));
+
+	if ((Size == 0) || (Size >= 0x10000)) {
+
+		ASSERT(0);
+
+		ProbeForRead(Address, Size, Alignment);
+
+	}
+	else {
+		if (((ULONG_PTR)Address & (Alignment - 1)) != 0) {
+			ExRaiseDatatypeMisalignment();
+		}
+
+		if ((PUCHAR)Address >= (UCHAR * const)MM_USER_PROBE_ADDRESS) {
+			Address = (UCHAR * const)MM_USER_PROBE_ADDRESS;
+		}
+
+		_ReadWriteBarrier();
+		*(volatile UCHAR *)Address;
+	}
+}
+
+#else
+
+#define ProbeForReadSmallStructure(Address, Size, Alignment) {               \
+    ASSERT(((Alignment) == 1) || ((Alignment) == 2) ||                       \
+           ((Alignment) == 4) || ((Alignment) == 8) ||                       \
+           ((Alignment) == 16));                                             \
+    if ((Size == 0) || (Size > 0x10000)) {                                   \
+        ASSERT(0);                                                           \
+        ProbeForRead(Address, Size, Alignment);                              \
+    } else {                                                                 \
+        if (((ULONG_PTR)(Address) & ((Alignment) - 1)) != 0) {               \
+            ExRaiseDatatypeMisalignment();                                   \
+        }                                                                    \
+        if ((ULONG_PTR)(Address) >= (ULONG_PTR)MM_USER_PROBE_ADDRESS) {      \
+            *(volatile UCHAR * const)MM_USER_PROBE_ADDRESS = 0;              \
+        }                                                                    \
+    }                                                                        \
+}
+
+#endif
 
 typedef NTKERNELAPI NTSTATUS (*PSGETCONTEXTTHREAD)(
 	__in PETHREAD Thread,
@@ -111,21 +189,53 @@ VOID __stdcall FiliterPsGetSetContextThread(__in PETHREAD Thread,
 	__in PCONTEXT ThreadContext,
 	__in KPROCESSOR_MODE Mode)
 {
-	if (Mode == UserMode)
+	//[1956] setThreadContext(394, 5EC, 12FCFBB4). dr0=0 dr1=0 dr2=0 dr3=0 dr7=400
+	if (!MmIsAddressValid(ThreadContext))
 	{
-		KdPrint(("UserMode !"));
+		KdPrint(("ThreadContext Error"));
+		return ;
 	}
-	else if (Mode == KernelMode)
-	{
-		KdPrint(("KernelMode !"));
-	}
+	KdPrint(("setThreadContext(%X, %X, %X). dr0=%X dr1=%X dr2=%X dr3=%X dr7=%X",
+		Thread, ThreadContext, Mode,ThreadContext->Dr0, ThreadContext->Dr1, ThreadContext->Dr2, ThreadContext->Dr3, ThreadContext->Dr7));
 	ULONG	Process;
-	if (Thread == 0) { return ; }
-
+	if (!MmIsAddressValid(Thread))
+	{
+		return;
+	}
 	Process = *(ULONG*)((ULONG)Thread + 0x150);
-	if (Process == 0) { return ; }
-	KdPrint(("%s", Process + 0x16c));
-	KdPrint(("CALLED !%X",Thread));
+	KdPrint(("%X", Process));
+	if (Process == 0) { return; }
+	__try
+	{
+		if (Mode == UserMode)
+		{
+			ProbeForReadSmallStructure(ThreadContext, sizeof(CONTEXT), PROBE_ALIGNMENT(CONTEXT));
+			KdPrint(("UserMode !"));
+		}
+		else if(Mode == KernelMode)
+		{
+			KdPrint(("Not UserMode !"));
+		}
+		if (strstr((char*)(Process + 0x16c),"game.exe") != NULL)
+		{
+			KdPrint(("%s", Process + 0x16c));
+			if (strstr((char*)((ULONG)PsGetCurrentProcess()+0x16c),"ollydbg") != NULL)
+			{
+				KdPrint(("ollydbg !"));
+				return;
+			}
+			if (ThreadContext->ContextFlags|CONTEXT_DEBUG_REGISTERS)
+			{
+				KdPrint(("~CONTEXT_DEBUG_REGISTERS !"));
+				ThreadContext->ContextFlags = ~CONTEXT_DEBUG_REGISTERS;
+			}
+		}
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		KdPrint(("EXCEPTION_EXECUTE_HANDLER !"));
+		return;
+	}
 }
 
 
@@ -133,25 +243,14 @@ __declspec(naked) VOID NewPsGetContextThread()
 {
 	__asm
 	{
-		pushad
-		pushfd
 
-		mov			edi, edi
-		push		ebp
-		mov			ebp,esp
-
-		push		[ebp+0x10]
-		push		[ebp+0xc]
-		push		[ebp+0x8]
+		push		[esp + 0x10]
+		push		[esp + 0xc]
+		push		[esp+0x8]
 
 		call		FiliterPsGetSetContextThread
 
-		mov			esp,ebp
-		pop			ebp
 
-		popfd
-		popad
-		
 		mov			edi,edi
 		push		ebp
 		mov			ebp,esp
@@ -163,17 +262,14 @@ __declspec(naked) VOID NewPsSetContextThread()
 {
 	__asm
 	{
-		pushad
-		pushfd
 
-		push[ebp + 0x10]
-		push[ebp + 0xc]
-		push[ebp + 0x8]
+
+		push		[esp + 0x10]
+		push		[esp + 0xc]
+		push		[esp + 0x8]
 
 		call		FiliterPsGetSetContextThread
 
-		popfd
-		popad
 
 		mov			edi, edi
 		push		ebp
