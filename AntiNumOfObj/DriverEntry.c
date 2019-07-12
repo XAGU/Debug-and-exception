@@ -406,7 +406,19 @@ VOID UnAntiCheck()
 	}
 }
 
+VOID DriverUnLoad(PDRIVER_OBJECT pDrverObject)
+{
+	KdPrint(("驱动卸载成功！"));
+}
 
+NTSTATUS DriverEntry(PDRIVER_OBJECT pDrverObject, PUNICODE_STRING usRegPath)
+{
+
+	KdPrint(("驱动加载成功！"));
+	AntiCheak(pDrverObject);
+	pDrverObject->DriverUnload = DriverUnLoad;
+	return STATUS_SUCCESS;
+}
 
 /*
 
